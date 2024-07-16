@@ -1,3 +1,1 @@
-import { useVoiceClient } from "./src/voiceClient.js";
-
-useVoiceClient();
+import './src/voiceClient.js';

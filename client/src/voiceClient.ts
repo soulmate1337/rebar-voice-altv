@@ -6,23 +6,25 @@ let localPlayer: alt.Player;
 let currentRange: number;
 let showRangeTimer: number;
 let talkingState: boolean;
-let interval;
+let everyTickHandler: number | null = null;
+let interval: number | null = null;
 
 export function useVoiceClient() {
-        localPlayer = alt.Player.local;
-        talkingState = false;
-        currentRange = 0;
-        showRangeTimer = null;
-        registerEvents();
+    localPlayer = alt.Player.local;
+    talkingState = false;
+    currentRange = 0;
+    showRangeTimer = null;
+    registerEvents();
 
-        function registerEvents() {
-        alt.on('keydown', key => {
-            if (key === 220) { // ^ - Taste
+    function registerEvents() {
+        alt.on('keydown', (key) => {
+            if (key === 220) {
+                // ^ - Taste
                 alt.emitServer(VoiceSystemEvents.ToServer.ChangeVoiceRange);
             }
         });
 
-        alt.onServer(VoiceSystemEvents.ToClient.UpdateVoiceRange, range => {
+        alt.onServer(VoiceSystemEvents.ToClient.UpdateVoiceRange, (range) => {
             currentRange = range;
             showVoiceRange();
         });
@@ -51,7 +53,7 @@ export function useVoiceClient() {
 
         const interval = alt.setInterval(() => {
             if (new Date().getTime() > endTime) {
-                alt.clearEveryTick(interval);
+                alt.clearInterval(interval);
             } else {
                 drawVoiceRange(range);
             }
@@ -61,7 +63,32 @@ export function useVoiceClient() {
     function drawVoiceRange(range) {
         if (range > 0) {
             const { x, y, z } = localPlayer.pos;
-            game.drawMarker(1, x, y, z - 0.8, 0, 0, 0, 0, 0, 0, range * 2, range * 2, 1, 96, 165, 250, 100, false, true, 2, false, null, null, false);
+            game.drawMarker(
+                1,
+                x,
+                y,
+                z - 0.8,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                range * 2,
+                range * 2,
+                1,
+                96,
+                165,
+                250,
+                100,
+                false,
+                true,
+                2,
+                false,
+                null,
+                null,
+                false,
+            );
         }
     }
 
@@ -81,4 +108,52 @@ export function useVoiceClient() {
                 return 0; // Kein Kreis, wenn stumm geschaltet
         }
     }
+
+    function onGameEntityCreate(entity: alt.Entity) {
+        if (!(entity instanceof alt.Player)) return;
+        updateEveryTickHandler();
+    }
+
+    function onGameEntityDestroy(entity: alt.Entity) {
+        if (!(entity instanceof alt.Player)) return;
+        updateEveryTickHandler();
+    }
+
+    function updateEveryTickHandler() {
+        if (alt.Player.streamedIn.length > 0 && !everyTickHandler) {
+            everyTickHandler = alt.everyTick(processPlayerFilters);
+        } else if (alt.Player.streamedIn.length === 0 && everyTickHandler) {
+            alt.clearEveryTick(everyTickHandler);
+            everyTickHandler = null;
+        }
+    }
+
+    function processPlayerFilters() {
+        alt.Player.streamedIn.forEach((entity) => {
+            const localPlayerRoomKey = game.getRoomKeyFromEntity(alt.Player.local.scriptID);
+            const streamedPlayerRoomKey = game.getRoomKeyFromEntity(entity.scriptID);
+
+            if (localPlayerRoomKey !== streamedPlayerRoomKey) {
+                entity.filter = muffleFilter;
+                return;
+            }
+            entity.filter = null;
+        });
+    }
+
+    return {
+        onGameEntityCreate,
+        onGameEntityDestroy,
+    };
 }
+
+const voiceClient = useVoiceClient();
+
+const muffleFilter = new alt.AudioFilter('muffleFilter');
+muffleFilter.addBqfEffect(0, 1000, -6, 1, 0, 0, 1);
+muffleFilter.addBqfEffect(2, 100, 6, 1, 0, 0, 2);
+muffleFilter.addDistortionEffect(0.2, -0.8, -0.2, 0, 0.7, 3);
+muffleFilter.addVolumeEffect(0.6, 4);
+
+alt.on('gameEntityCreate', voiceClient.onGameEntityCreate);
+alt.on('gameEntityDestroy', voiceClient.onGameEntityDestroy);
